@@ -1,0 +1,21 @@
+---
+alwaysApply: true
+---
+
+Project Rules
+
+Backend must always use Laravel (latest stable version).
+
+Frontend must always use Vue.js with Vite.
+
+Backend and frontend are separated but live in the same project and communicate strictly via API (SPA architecture).
+
+Database must always be MySQL.
+
+The entire project must run through Docker (nginx, php-fpm, mysql, node).
+
+All database changes must use Laravel migrations.
+
+Follow the provided design exactly.
+
+Keep the code clean, modular, and production-ready.
