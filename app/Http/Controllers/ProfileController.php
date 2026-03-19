@@ -20,6 +20,7 @@ class ProfileController extends Controller
                 'sex' => $user->sex,
                 'age' => $user->age,
                 'height_cm' => $user->height_cm,
+                'start_weight_kg' => $user->start_weight_kg,
                 'current_weight_kg' => $user->current_weight_kg,
                 'goal_weight_kg' => $user->goal_weight_kg,
                 'activity_level' => $user->activity_level,
