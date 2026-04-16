@@ -10,7 +10,6 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\MealPlanController;
 
 Route::post('/register', [RegisteredUserController::class, 'store']);
-
 Route::post('/login', [LoginController::class, 'store']);
 
 Route::middleware('auth:sanctum')->group(function () {
@@ -26,10 +25,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/meal-plans', [MealPlanController::class, 'index']);
     Route::post('/meal-plans', [MealPlanController::class, 'store']);
+    Route::delete('/meal-plans/{mealPlan}', [MealPlanController::class, 'destroy']);
     Route::post('/meal-plans/{mealPlan}/cancel', [MealPlanController::class, 'cancel']);
     Route::get('/meal-plans/{mealPlan}', [MealPlanController::class, 'show']);
     Route::get('/meal-plans/{mealPlan}/weeks/{week}', [MealPlanController::class, 'showWeek']);
+    Route::post('/meal-plans/{mealPlan}/weeks/{week}/generate', [MealPlanController::class, 'generateWeek']);
     Route::get('/meal-plans/{mealPlan}/days/{day}', [MealPlanController::class, 'showDay']);
     Route::get('/meals/{meal}', [MealPlanController::class, 'showMeal']);
 });
-

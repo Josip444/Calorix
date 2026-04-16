@@ -13,11 +13,10 @@ export const useAuthStore = defineStore('auth', {
     actions: {
         async bootstrap() {
             try {
-                await api.get('/me');
-                // If /me succeeds, user will be filled via a later enhancement.
-                // For now, just mark initialized.
+                const { data } = await api.get('/me');
+                this.user = data.user;
             } catch {
-                // Not authenticated; ignore.
+                this.user = null;
             } finally {
                 this.initialized = true;
             }

@@ -19,7 +19,7 @@
              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
            </svg>
         </span>
-        {{ loading || isGeneratingAny ? 'Generiram tvoj plan...' : 'Generiraj novi plan' }}
+        {{ loading || isGeneratingAny ? 'Kreiram tvoj plan...' : 'Kreiraj novi plan' }}
       </button>
     </div>
 
@@ -48,10 +48,17 @@
                 <span class="text-[10px] text-slate-400">{{ formatDate(plan.created_at) }}</span>
               </div>
               <p class="font-semibold text-sm text-slate-900">{{ plan.start_date || 'Novi plan' }}</p>
-              <p class="text-xs text-slate-500 truncate">{{ plan.daily_calories_target }} kcal dnevno</p>
-              
-              <div v-if="plan.status === 'generating'" class="mt-2 h-1 w-full bg-slate-100 rounded-full overflow-hidden">
-                <div class="h-full bg-slate-900 transition-all duration-500" :style="{ width: `${plan.progress_percentage}%` }"></div>
+              <div class="flex items-center justify-between mt-3">
+                <div v-if="plan.status === 'generating'" class="h-1 flex-1 mr-3 bg-slate-100 rounded-full overflow-hidden">
+                  <div class="h-full bg-slate-900 transition-all duration-500" :style="{ width: `${plan.progress_percentage}%` }"></div>
+                </div>
+                <button 
+                  @click.stop="deletePlan(plan.id)"
+                  class="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                  title="Obriši plan"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
               </div>
             </button>
             <div v-if="!plans.length" class="text-center py-8">
@@ -71,7 +78,7 @@
            <p class="text-sm text-slate-500 mt-1">Svi tvoji detaljni jelovnici pojavit će se ovdje.</p>
         </div>
 
-        <div v-else-if="activePlan.status === 'generating'" class="bg-white rounded-3xl shadow-sm p-12 text-center border border-slate-100">
+        <div v-else-if="activePlan.status === 'generating' && !activeWeek" class="bg-white rounded-3xl shadow-sm p-12 text-center border border-slate-100">
           <div class="max-w-md mx-auto">
             <div class="relative w-24 h-24 mx-auto mb-6">
               <svg class="w-full h-full transform -rotate-90">
@@ -85,23 +92,14 @@
                 {{ activePlan.progress_percentage }}%
               </div>
             </div>
-            <h3 class="font-bold text-xl text-slate-900 mb-2">Generiramo tvoj 4-tjedni plan</h3>
+            <h3 class="font-bold text-xl text-slate-900 mb-2">Inicijaliziramo tvoj plan</h3>
             <p class="text-sm text-slate-500 mb-6">
-              Umjetna inteligencija upravo sastavlja tvoje obroke. Ovo može potrajati oko minutu.
-              <span v-if="activePlan.current_week_processing" class="block mt-2 font-semibold text-slate-900 italic animate-pulse">
-                Trenutno se generira: Tjedan {{ activePlan.current_week_processing }}/4...
-              </span>
+              Pripremamo strukturu tvojeg plana prehrane...
             </p>
-            <div class="flex flex-col items-center gap-4">
-              <div class="flex justify-center gap-1">
-                <div v-for="i in 4" :key="i" class="w-3 h-3 rounded-full"
-                     :class="i <= (activePlan.progress_percentage / 25) ? 'bg-slate-900' : 'bg-slate-100'"></div>
-              </div>
-              <button @click="cancelPlan(activePlan.id)" 
-                      class="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors py-2 px-4 border border-red-100 rounded-full hover:bg-red-50">
-                Otkaži generiranje
-              </button>
-            </div>
+            <button @click="cancelPlan(activePlan.id)" 
+                    class="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors py-2 px-4 border border-red-100 rounded-full hover:bg-red-50">
+              Otkaži
+            </button>
           </div>
         </div>
 
@@ -147,41 +145,68 @@
 
           <!-- Week View -->
           <div v-if="activeWeek" class="space-y-6">
-             <div class="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                <button v-for="d in activeWeek.days" :key="d.id"
-                        @click="selectedDayId = d.id"
-                        class="flex-shrink-0 w-24 p-3 rounded-2xl border text-center transition-all"
-                        :class="selectedDayId === d.id ? 'bg-white border-slate-900 shadow-md' : 'bg-white border-slate-100 text-slate-400 hover:border-slate-300'">
-                   <span class="block text-[10px] font-bold uppercase mb-1">{{ getDayName(d.date) }}</span>
-                   <span class="block text-lg font-bold text-slate-900">{{ getDayNum(d.date) }}</span>
-                </button>
+             <!-- If week has no days, show generate button -->
+             <div v-if="!activeWeek.days || activeWeek.days.length === 0" class="bg-white rounded-3xl p-12 text-center border border-slate-100">
+                <div v-if="activePlan.status === 'generating' && activePlan.current_week_processing === activeWeek.week_number">
+                   <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900 mx-auto mb-4"></div>
+                   <h3 class="font-bold text-xl text-slate-900">Generiramo tvoj plan za Tjedan {{ activeWeek.week_number }}</h3>
+                   <p class="text-sm text-slate-500 mt-2 mb-6">Umjetna inteligencija sastavlja tvoj jelovnik. Molimo pričekaj...</p>
+                   <button @click="cancelPlan(activePlan.id)" 
+                           class="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors py-2 px-4 border border-red-100 rounded-full hover:bg-red-50">
+                     Zaustavi generiranje
+                   </button>
+                </div>
+                <div v-else>
+                   <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                     <svg class="w-8 h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                   </div>
+                   <h3 class="font-semibold text-slate-900">Tjedan {{ activeWeek.week_number }} nije generiran</h3>
+                   <p class="text-sm text-slate-500 mt-1 mb-6">Klikni gumb ispod kako bi AI generirao jelovnik za ovaj tjedan.</p>
+                   <button @click="generateWeek(activeWeek.id)" 
+                           :disabled="activePlan.status === 'generating'"
+                           class="px-8 py-3 bg-slate-900 text-white rounded-full text-sm font-bold shadow-lg shadow-slate-200 hover:scale-105 active:scale-95 transition-all disabled:opacity-50">
+                     Generiraj Tjedan {{ activeWeek.week_number }}
+                   </button>
+                </div>
              </div>
 
-             <!-- Day View -->
-             <div v-if="activeDay" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div v-for="meal in activeDay.meals" :key="meal.id"
-                     class="bg-white rounded-3xl p-6 border border-slate-100 hover:shadow-md transition-all">
-                   <div class="flex items-center justify-between mb-4">
-                      <span class="text-[10px] font-bold uppercase tracking-widest px-2 py-1 bg-slate-100 text-slate-600 rounded-lg">
-                        {{ meal.meal_type }}
-                      </span>
-                      <span class="text-sm font-bold text-slate-900">{{ meal.total_calories }} kcal</span>
-                   </div>
-                   <div class="space-y-3">
-                      <div v-for="item in meal.items" :key="item.id" class="flex justify-between items-center text-sm">
-                         <span class="text-slate-700">{{ item.food_name }}</span>
-                         <span class="text-slate-400 text-xs">{{ item.quantity || item.quantity_text }}{{ item.unit }}</span>
+             <template v-else>
+                <div class="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                   <button v-for="d in activeWeek.days" :key="d.id"
+                           @click="selectedDayId = d.id"
+                           class="flex-shrink-0 w-24 p-3 rounded-2xl border text-center transition-all"
+                           :class="selectedDayId === d.id ? 'bg-white border-slate-900 shadow-md' : 'bg-white border-slate-100 text-slate-400 hover:border-slate-300'">
+                      <span class="block text-[10px] font-bold uppercase mb-1">{{ getDayName(d.date) }}</span>
+                      <span class="block text-lg font-bold text-slate-900">{{ getDayNum(d.date) }}</span>
+                   </button>
+                </div>
+
+                <!-- Day View -->
+                <div v-if="activeDay" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div v-for="meal in activeDay.meals" :key="meal.id"
+                        class="bg-white rounded-3xl p-6 border border-slate-100 hover:shadow-md transition-all">
+                      <div class="flex items-center justify-between mb-4">
+                         <span class="text-[10px] font-bold uppercase tracking-widest px-2 py-1 bg-slate-100 text-slate-600 rounded-lg">
+                           {{ meal.meal_type }}
+                         </span>
+                         <span class="text-sm font-bold text-slate-900">{{ meal.total_calories }} kcal</span>
                       </div>
-                   </div>
-                   <div class="mt-6 pt-4 border-t border-slate-50 flex justify-between">
-                      <div class="flex gap-3 text-[10px] text-slate-400 font-bold uppercase">
-                         <span>P: {{ meal.total_protein_g }}g</span>
-                         <span>U: {{ meal.total_carbs_g }}g</span>
-                         <span>M: {{ meal.total_fats_g }}g</span>
+                      <div class="space-y-3">
+                         <div v-for="item in meal.items" :key="item.id" class="flex justify-between items-center text-sm">
+                            <span class="text-slate-700">{{ item.food_name }}</span>
+                            <span class="text-slate-400 text-xs">{{ item.quantity || item.quantity_text }}{{ item.unit }}</span>
+                         </div>
+                      </div>
+                      <div class="mt-6 pt-4 border-t border-slate-50 flex justify-between">
+                         <div class="flex gap-3 text-[10px] text-slate-400 font-bold uppercase">
+                            <span>P: {{ meal.total_protein_g }}g</span>
+                            <span>U: {{ meal.total_carbs_g }}g</span>
+                            <span>M: {{ meal.total_fats_g }}g</span>
+                         </div>
                       </div>
                    </div>
                 </div>
-             </div>
+             </template>
           </div>
         </template>
       </main>
@@ -335,12 +360,25 @@ async function generatePlan() {
     await fetchPlans();
     if (data.meal_plan) {
       selectPlan(data.meal_plan.id);
-      startPolling(data.meal_plan.id);
     }
   } catch (err) {
-    console.error('Failed to generate plan', err);
+    console.error('Failed to create plan', err);
   } finally {
     loading.value = false;
+  }
+}
+
+async function generateWeek(weekId) {
+  if (!selectedPlanId.value) return;
+  try {
+    const { data } = await api.post(`/meal-plans/${selectedPlanId.value}/weeks/${weekId}/generate`);
+    startPolling(selectedPlanId.value);
+    // Refresh local state
+    if (data.meal_plan) {
+       fullPlanData.value = data.meal_plan;
+    }
+  } catch (err) {
+    console.error('Failed to generate week', err);
   }
 }
 
@@ -355,6 +393,23 @@ async function cancelPlan(id) {
     if (selectedPlanId.value === id) fullPlanData.value = data.meal_plan;
   } catch (err) {
     console.error('Failed to cancel plan', err);
+  }
+}
+
+async function deletePlan(id) {
+  if (!confirm('Jeste li sigurni da želite trajno obrisati ovaj plan prehrane?')) return;
+  try {
+    await api.delete(`/meal-plans/${id}`);
+    const idx = plans.findIndex(p => p.id === id);
+    if (idx !== -1) plans.splice(idx, 1);
+    
+    if (selectedPlanId.value === id) {
+      selectedPlanId.value = null;
+      fullPlanData.value = null;
+      stopPolling();
+    }
+  } catch (err) {
+    console.error('Failed to delete plan', err);
   }
 }
 

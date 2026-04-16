@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\MealPlan;
+
 class MealPlanGenerator
 {
 
@@ -38,7 +40,7 @@ class MealPlanGenerator
         );
 
         $response = $client->chat()->create([
-            'model' => 'gpt-4o-mini', // Updated to a more standard model name if needed, but keeping user's preference if specified. User mentioned gpt-4.1-mini before.
+            'model' => 'gpt-4o-mini',
             'messages' => [
                 [
                     'role' => 'system',
@@ -66,6 +68,52 @@ class MealPlanGenerator
         $this->validateWeekStructure($decoded, $mealsPerDay);
 
         return $decoded;
+    }
+
+    public function persistWeek(MealPlan $plan, int $weekNumber, array $weekData): void
+    {
+        $week = $plan->weeks()->where('week_number', $weekNumber)->first();
+
+        if (!$week) {
+             $week = $plan->weeks()->create([
+                'week_number' => $weekNumber,
+                'start_date' => now()->addWeeks($weekNumber - 1)->startOfWeek(),
+                'end_date' => now()->addWeeks($weekNumber - 1)->endOfWeek(),
+            ]);
+        }
+
+        // Clean up existing days/meals if any (re-generation)
+        $week->days()->delete();
+
+        foreach (($weekData['days'] ?? []) as $dayData) {
+            $day = $week->days()->create([
+                'day_number' => $dayData['day_number'] ?? 1,
+                'date' => $week->start_date->copy()->addDays(($dayData['day_number'] ?? 1) - 1),
+            ]);
+
+            foreach (($dayData['meals'] ?? []) as $mealData) {
+                $meal = $day->meals()->create([
+                    'meal_type' => $mealData['meal_type'] ?? 'breakfast',
+                    'total_calories' => $mealData['total_calories'] ?? 0,
+                    'total_protein_g' => $mealData['total_protein_g'] ?? 0,
+                    'total_carbs_g' => $mealData['total_carbs_g'] ?? 0,
+                    'total_fats_g' => $mealData['total_fats_g'] ?? 0,
+                    'instructions_text' => $mealData['instructions_text'] ?? '',
+                ]);
+
+                foreach (($mealData['items'] ?? []) as $itemData) {
+                    $meal->items()->create([
+                        'food_name' => $itemData['food_name'],
+                        'quantity' => $itemData['quantity'] ?? 0,
+                        'unit' => $itemData['unit'] ?? 'g',
+                        'calories' => $itemData['calories'] ?? 0,
+                        'protein_g' => $itemData['protein_g'] ?? 0,
+                        'carbs_g' => $itemData['carbs_g'] ?? 0,
+                        'fats_g' => $itemData['fats_g'] ?? 0,
+                    ]);
+                }
+            }
+        }
     }
 
     private function buildWeekPrompt(

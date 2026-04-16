@@ -8,9 +8,10 @@ use App\Models\MealDay;
 use App\Models\MealPlan;
 use App\Models\MealWeek;
 use App\Services\MealPlanGenerator;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class MealPlanController extends Controller
 {
@@ -60,19 +61,49 @@ class MealPlanController extends Controller
             'carbs_g_target' => $user->carbs_g_target,
             'fats_g_target' => $user->fats_g_target,
             'source' => 'openai',
-            'status' => 'generating',
+            'status' => 'generated', // Set to generated immediately as skeleton is ready
             'progress_percentage' => 0,
         ]);
 
-        // Dispatch jobs for each week
+        // Create 4 empty weeks
         for ($week = 1; $week <= 4; $week++) {
-            GenerateMealWeekJob::dispatch($plan->id, $week);
+            $plan->weeks()->create([
+                'week_number' => $week,
+                'start_date' => now()->addWeeks($week - 1)->startOfWeek(),
+                'end_date' => now()->addWeeks($week - 1)->endOfWeek(),
+            ]);
         }
 
         return response()->json([
-            'message' => 'Generiranje plana prehrane je započelo.',
-            'meal_plan' => $plan,
+            'message' => 'Plan prehrane je kreiran. Sada možete generirati obroke za svaki tjedan.',
+            'meal_plan' => $plan->load('weeks'),
         ], 201);
+    }
+
+    public function generateWeek(MealPlan $mealPlan, MealWeek $week): JsonResponse
+    {
+        $this->authorizeForUserOrFail($mealPlan);
+
+        if ($week->meal_plan_id !== $mealPlan->id) {
+            abort(404);
+        }
+
+        // Optional: Check if already generating or has content
+        if ($mealPlan->status === 'generating' && $mealPlan->current_week_processing === $week->week_number) {
+            return response()->json(['message' => 'Ovaj tjedan se već generira.'], 422);
+        }
+
+        $mealPlan->update([
+            'status' => 'generating',
+            'current_week_processing' => $week->week_number
+        ]);
+
+        GenerateMealWeekJob::dispatch($mealPlan->id, $week->week_number);
+
+        return response()->json([
+            'message' => "Generiranje za tjedan {$week->week_number} je započelo.",
+            'meal_plan' => $mealPlan->load('weeks'),
+        ]);
     }
 
     public function show(MealPlan $mealPlan): JsonResponse
@@ -92,15 +123,26 @@ class MealPlanController extends Controller
 
         if ($mealPlan->status === 'generating') {
             $mealPlan->update([
-                'status' => 'cancelled',
-                'current_week_processing' => null
+                'status' => 'generated', // Revert to generated, not cancelled
+                'current_week_processing' => null // Clear current week to signal the job to stop
             ]);
-            Log::info("MealPlan {$mealPlan->id} was cancelled by user.");
+            Log::info("MealPlan {$mealPlan->id} weekly generation was stopped by user.");
         }
 
         return response()->json([
-            'message' => 'Generiranje plana je otkazano.',
-            'meal_plan' => $mealPlan,
+            'message' => 'Generiranje za ovaj tjedan je otkazano.',
+            'meal_plan' => $mealPlan->load('weeks'),
+        ]);
+    }
+
+    public function destroy(MealPlan $mealPlan): JsonResponse
+    {
+        $this->authorizeForUserOrFail($mealPlan);
+
+        $mealPlan->delete();
+
+        return response()->json([
+            'message' => 'Plan prehrane je uspješno obrisan.',
         ]);
     }
 

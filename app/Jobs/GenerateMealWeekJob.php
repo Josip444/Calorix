@@ -18,6 +18,7 @@ class GenerateMealWeekJob implements ShouldQueue
 
     public $tries = 3;
     public $backoff = 60;
+    public $timeout = 180;
 
     public function __construct(
         protected int $mealPlanId,
@@ -28,13 +29,13 @@ class GenerateMealWeekJob implements ShouldQueue
     {
         $plan = MealPlan::findOrFail($this->mealPlanId);
 
-        if ($plan->status === 'cancelled') {
-            Log::info("GenerateMealWeekJob early exit: Plan {$this->mealPlanId} is cancelled.");
-            return;
-        }
-
         // Update current week processing
         $plan->update(['current_week_processing' => $this->weekNumber]);
+
+        if ($plan->status === 'cancelled' || $plan->current_week_processing !== $this->weekNumber) {
+            Log::info("GenerateMealWeekJob early exit: Plan {$this->mealPlanId} is cancelled or processing another week.");
+            return;
+        }
 
         try {
             $user = $plan->user;
@@ -53,22 +54,29 @@ class GenerateMealWeekJob implements ShouldQueue
                 weekNumber: $this->weekNumber
             );
 
-            DB::transaction(function () use ($plan, $structure) {
-                $this->persistWeek($plan, $structure);
+            // Check again after OpenAI response
+            $plan->refresh();
+            if ($plan->status === 'cancelled' || $plan->current_week_processing !== $this->weekNumber) {
+                Log::info("GenerateMealWeekJob exit after AI: Plan {$this->mealPlanId} was stopped for week {$this->weekNumber}.");
+                return;
+            }
+
+            DB::transaction(function () use ($plan, $structure, $generator) {
+                $generator->persistWeek($plan, $this->weekNumber, $structure);
                 
-                $completedWeeks = $plan->weeks()->count();
+                $completedWeeks = $plan->weeks()->whereHas('days')->count();
                 $progress = ($completedWeeks / 4) * 100;
                 
                 $plan->update([
                     'progress_percentage' => (int) $progress,
-                    'status' => $completedWeeks >= 4 ? 'generated' : 'generating'
+                    'status' => 'generated', // Mark as generated so user can see it, even if partially
+                    'current_week_processing' => null
                 ]);
 
                 if ($completedWeeks >= 4) {
                     $plan->update([
                         'start_date' => $plan->weeks()->min('start_date'),
                         'end_date' => $plan->weeks()->max('end_date'),
-                        'current_week_processing' => null
                     ]);
                 }
             });
@@ -81,46 +89,6 @@ class GenerateMealWeekJob implements ShouldQueue
             }
             
             throw $e;
-        }
-    }
-
-    private function persistWeek(MealPlan $plan, array $weekData): void
-    {
-        $week = $plan->weeks()->create([
-            'week_number' => $this->weekNumber,
-            // Assuming start_date/end_date logic can be simplified or dynamic
-            'start_date' => now()->addWeeks($this->weekNumber - 1)->startOfWeek(),
-            'end_date' => now()->addWeeks($this->weekNumber - 1)->endOfWeek(),
-        ]);
-
-        foreach (($weekData['days'] ?? []) as $dayData) {
-            $day = $week->days()->create([
-                'day_number' => $dayData['day_number'] ?? 1,
-                'date' => $week->start_date->copy()->addDays(($dayData['day_number'] ?? 1) - 1),
-            ]);
-
-            foreach (($dayData['meals'] ?? []) as $mealData) {
-                $meal = $day->meals()->create([
-                    'meal_type' => $mealData['meal_type'] ?? 'breakfast',
-                    'total_calories' => $mealData['total_calories'] ?? 0,
-                    'total_protein_g' => $mealData['total_protein_g'] ?? 0,
-                    'total_carbs_g' => $mealData['total_carbs_g'] ?? 0,
-                    'total_fats_g' => $mealData['total_fats_g'] ?? 0,
-                    'instructions_text' => $mealData['instructions_text'] ?? '',
-                ]);
-
-                foreach (($mealData['items'] ?? []) as $itemData) {
-                    $meal->items()->create([
-                        'food_name' => $itemData['food_name'],
-                        'quantity' => $itemData['quantity'] ?? 0,
-                        'unit' => $itemData['unit'] ?? 'g',
-                        'calories' => $itemData['calories'] ?? 0,
-                        'protein_g' => $itemData['protein_g'] ?? 0,
-                        'carbs_g' => $itemData['carbs_g'] ?? 0,
-                        'fats_g' => $itemData['fats_g'] ?? 0,
-                    ]);
-                }
-            }
         }
     }
 }
