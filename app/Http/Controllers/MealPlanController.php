@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\GenerateMealWeekJob;
 use App\Models\Meal;
 use App\Models\MealDay;
 use App\Models\MealPlan;
@@ -9,6 +10,7 @@ use App\Models\MealWeek;
 use App\Services\MealPlanGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class MealPlanController extends Controller
 {
@@ -31,6 +33,8 @@ class MealPlanController extends Controller
                 'fats_g_target',
                 'source',
                 'status',
+                'current_week_processing',
+                'progress_percentage',
                 'created_at',
             ]);
 
@@ -55,39 +59,18 @@ class MealPlanController extends Controller
             'protein_g_target' => $user->protein_g_target,
             'carbs_g_target' => $user->carbs_g_target,
             'fats_g_target' => $user->fats_g_target,
-            'source' => 'simulated',
+            'source' => 'openai',
             'status' => 'generating',
+            'progress_percentage' => 0,
         ]);
 
-        try {
-            $structure = $this->generator->generate(
-                dailyCalories: $user->daily_calories_target,
-                proteinTarget: $user->protein_g_target,
-                carbsTarget: $user->carbs_g_target,
-                fatsTarget: $user->fats_g_target,
-                mealsPerDay: $mealsPerDay,
-                allergies: $user->allergies_text,
-                goalType: $user->goal_type,
-            );
-
-            $this->persistStructure($plan, $structure);
-
-            $plan->status = 'generated';
-            $plan->start_date = $structure['start_date'];
-            $plan->end_date = $structure['end_date'];
-            $plan->save();
-        } catch (\Throwable $e) {
-            $plan->status = 'failed';
-            $plan->save();
-
-            return response()->json([
-                'message' => 'Failed to generate meal plan.',
-            ], 500);
+        // Dispatch jobs for each week
+        for ($week = 1; $week <= 4; $week++) {
+            GenerateMealWeekJob::dispatch($plan->id, $week);
         }
 
-        $plan->load('weeks.days.meals.items');
-
         return response()->json([
+            'message' => 'Generiranje plana prehrane je započelo.',
             'meal_plan' => $plan,
         ], 201);
     }
@@ -96,9 +79,27 @@ class MealPlanController extends Controller
     {
         $this->authorizeForUserOrFail($mealPlan);
 
-        $mealPlan->load('weeks');
+        $mealPlan->load('weeks.days.meals.items');
 
         return response()->json([
+            'meal_plan' => $mealPlan,
+        ]);
+    }
+
+    public function cancel(MealPlan $mealPlan): JsonResponse
+    {
+        $this->authorizeForUserOrFail($mealPlan);
+
+        if ($mealPlan->status === 'generating') {
+            $mealPlan->update([
+                'status' => 'cancelled',
+                'current_week_processing' => null
+            ]);
+            Log::info("MealPlan {$mealPlan->id} was cancelled by user.");
+        }
+
+        return response()->json([
+            'message' => 'Generiranje plana je otkazano.',
             'meal_plan' => $mealPlan,
         ]);
     }
@@ -111,7 +112,7 @@ class MealPlanController extends Controller
             abort(404);
         }
 
-        $week->load('days');
+        $week->load('days.meals.items');
 
         return response()->json([
             'week' => $week,
@@ -126,7 +127,7 @@ class MealPlanController extends Controller
             abort(404);
         }
 
-        $day->load('meals');
+        $day->load('meals.items');
 
         return response()->json([
             'day' => $day,
@@ -152,47 +153,6 @@ class MealPlanController extends Controller
 
         if ($mealPlan->user_id !== $userId) {
             abort(404);
-        }
-    }
-
-    private function persistStructure(MealPlan $plan, array $structure): void
-    {
-        foreach ($structure['weeks'] as $weekData) {
-            $week = $plan->weeks()->create([
-                'week_number' => $weekData['week_number'],
-                'start_date' => $weekData['start_date'],
-                'end_date' => $weekData['end_date'],
-            ]);
-
-            foreach ($weekData['days'] as $dayData) {
-                $day = $week->days()->create([
-                    'day_number' => $dayData['day_number'],
-                    'date' => $dayData['date'],
-                ]);
-
-                foreach ($dayData['meals'] as $mealData) {
-                    $meal = $day->meals()->create([
-                        'meal_type' => $mealData['meal_type'],
-                        'total_calories' => $mealData['total_calories'],
-                        'total_protein_g' => $mealData['total_protein_g'],
-                        'total_carbs_g' => $mealData['total_carbs_g'],
-                        'total_fats_g' => $mealData['total_fats_g'],
-                        'instructions_text' => $mealData['instructions_text'],
-                    ]);
-
-                    foreach ($mealData['items'] as $itemData) {
-                        $meal->items()->create([
-                            'food_name' => $itemData['food_name'],
-                            'quantity' => $itemData['quantity'],
-                            'unit' => $itemData['unit'],
-                            'calories' => $itemData['calories'],
-                            'protein_g' => $itemData['protein_g'],
-                            'carbs_g' => $itemData['carbs_g'],
-                            'fats_g' => $itemData['fats_g'],
-                        ]);
-                    }
-                }
-            }
         }
     }
 }

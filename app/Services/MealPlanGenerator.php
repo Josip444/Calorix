@@ -4,13 +4,17 @@ namespace App\Services;
 
 class MealPlanGenerator
 {
+
     /**
      * Simulate an OpenAI-generated meal plan structure.
      *
      * This returns 4 weeks, each with 7 days, each day containing
      * $mealsPerDay meals with simple, deterministic macro values.
      */
-    public function generate(
+    /**
+     * Generate a one-week meal plan (7 days) via OpenAI.
+     */
+    public function generateWeek(
         int $dailyCalories,
         int $proteinTarget,
         int $carbsTarget,
@@ -18,75 +22,181 @@ class MealPlanGenerator
         int $mealsPerDay,
         ?string $allergies,
         string $goalType,
+        int $weekNumber
     ): array {
-        $weeks = [];
+        $client = \OpenAI::client(config('services.openai.key'));
 
-        $startDate = now()->startOfDay();
+        $prompt = $this->buildWeekPrompt(
+            $dailyCalories,
+            $proteinTarget,
+            $carbsTarget,
+            $fatsTarget,
+            $mealsPerDay,
+            $allergies,
+            $goalType,
+            $weekNumber
+        );
 
-        for ($w = 1; $w <= 4; $w++) {
-            $weekStart = $startDate->copy()->addDays(($w - 1) * 7);
-            $weekEnd = $weekStart->copy()->addDays(6);
+        $response = $client->chat()->create([
+            'model' => 'gpt-4o-mini', // Updated to a more standard model name if needed, but keeping user's preference if specified. User mentioned gpt-4.1-mini before.
+            'messages' => [
+                [
+                    'role' => 'system',
+                    'content' => 'You are a nutrition expert. Return ONLY valid JSON. All text must be in Croatian language.',
+                ],
+                [
+                    'role' => 'user',
+                    'content' => $prompt,
+                ],
+            ],
+            'temperature' => 0.7,
+        ]);
 
-            $days = [];
+        $content = $response->choices[0]->message->content ?? '';
+        
+        // Clean up markdown code blocks if present
+        $content = preg_replace('/^```json\s*|\s*```$/i', '', trim($content));
 
-            for ($d = 1; $d <= 7; $d++) {
-                $date = $weekStart->copy()->addDays($d - 1)->toDateString();
+        $decoded = json_decode($content, true);
 
-                $meals = [];
-
-                $caloriesPerMeal = (int) floor($dailyCalories / $mealsPerDay);
-                $proteinPerMeal = (int) floor($proteinTarget / $mealsPerDay);
-                $carbsPerMeal = (int) floor($carbsTarget / $mealsPerDay);
-                $fatsPerMeal = (int) floor($fatsTarget / $mealsPerDay);
-
-                for ($m = 1; $m <= $mealsPerDay; $m++) {
-                    $mealType = $this->mealTypeForIndex($m);
-
-                    $items = [
-                        [
-                            'food_name' => ucfirst($mealType).' example '.$m,
-                            'quantity' => 100,
-                            'unit' => 'g',
-                            'calories' => $caloriesPerMeal,
-                            'protein_g' => $proteinPerMeal,
-                            'carbs_g' => $carbsPerMeal,
-                            'fats_g' => $fatsPerMeal,
-                        ],
-                    ];
-
-                    $meals[] = [
-                        'meal_type' => $mealType,
-                        'total_calories' => $caloriesPerMeal,
-                        'total_protein_g' => $proteinPerMeal,
-                        'total_carbs_g' => $carbsPerMeal,
-                        'total_fats_g' => $fatsPerMeal,
-                        'instructions_text' => 'Simulated meal for '.$goalType.' goal.',
-                        'items' => $items,
-                    ];
-                }
-
-                $days[] = [
-                    'day_number' => $d,
-                    'date' => $date,
-                    'meals' => $meals,
-                ];
-            }
-
-            $weeks[] = [
-                'week_number' => $w,
-                'start_date' => $weekStart->toDateString(),
-                'end_date' => $weekEnd->toDateString(),
-                'days' => $days,
-            ];
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
+            throw new \Exception('Invalid JSON from AI: '.$content);
         }
 
-        return [
-            'start_date' => $startDate->toDateString(),
-            'end_date' => $startDate->copy()->addDays(27)->toDateString(),
-            'weeks' => $weeks,
-        ];
+        $this->validateWeekStructure($decoded, $mealsPerDay);
+
+        return $decoded;
     }
 
+    private function buildWeekPrompt(
+        int $calories,
+        int $protein,
+        int $carbs,
+        int $fats,
+        int $meals,
+        ?string $allergies,
+        string $goal,
+        int $weekNumber
+    ): string {
+        return "
+        Generiraj plan prehrane za JEDAN TJEDAN (7 dana).
+        Ovo je TJEDAN BROJ: {$weekNumber}.
+
+        STRICT RULES:
+        - Return ONLY valid JSON (no text, no explanation)
+        - All text must be in standard Croatian language
+        - Food names must be in Croatian
+        - Instructions must be in Croatian
+        - Do not use trailing commas
+        - All numbers must be numeric (no units in values)
+
+        STRUCTURE RULES:
+        - Must contain exactly 7 days
+        - Each day must contain exactly {$meals} meals
+
+        MEAL RULES:
+        - meal_type must be one of: breakfast, lunch, dinner, snack
+
+        USER DATA:
+        - Calories target per day: {$calories}
+        - Protein target per day: {$protein}g
+        - Carbs target per day: {$carbs}g
+        - Fats target per day: {$fats}g
+        - Goal: {$goal}
+        - Allergies: ".($allergies ?: 'none')."
+
+        JSON STRUCTURE:
+        {
+          \"week_number\": {$weekNumber},
+          \"days\": [
+            {
+              \"day_number\": 1,
+              \"meals\": [
+                {
+                  \"meal_type\": \"breakfast\",
+                  \"total_calories\": number,
+                  \"total_protein_g\": number,
+                  \"total_carbs_g\": number,
+                  \"total_fats_g\": number,
+                  \"instructions_text\": \"upute na hrvatskom\",
+                  \"items\": [
+                    {
+                      \"food_name\": \"naziv namirnice\",
+                      \"quantity\": number,
+                      \"unit\": \"g\",
+                      \"calories\": number,
+                      \"protein_g\": number,
+                      \"carbs_g\": number,
+                      \"fats_g\": number
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        ";
+    }
+
+    private function validateWeekStructure(array $data, int $mealsPerDay): void
+    {
+        if (!isset($data['days']) || !is_array($data['days'])) {
+            throw new \Exception('Missing days');
+        }
+
+        if (count($data['days']) !== 7) {
+            throw new \Exception('Days count must be 7');
+        }
+
+        foreach ($data['days'] as $dayIndex => $day) {
+            if (!isset($day['meals']) || !is_array($day['meals'])) {
+                throw new \Exception("Day {$dayIndex} missing meals");
+            }
+
+            if (count($day['meals']) !== $mealsPerDay) {
+                throw new \Exception("Day {$dayIndex} must have {$mealsPerDay} meals");
+            }
+
+            foreach ($day['meals'] as $mealIndex => $meal) {
+                $requiredMealFields = [
+                    'meal_type',
+                    'total_calories',
+                    'total_protein_g',
+                    'total_carbs_g',
+                    'total_fats_g',
+                    'items'
+                ];
+
+                foreach ($requiredMealFields as $field) {
+                    if (!isset($meal[$field])) {
+                        throw new \Exception("Meal missing field: {$field}");
+                    }
+                }
+
+                if (!is_array($meal['items']) || empty($meal['items'])) {
+                    throw new \Exception("Meal must have items");
+                }
+
+                foreach ($meal['items'] as $itemIndex => $item) {
+                    $requiredItemFields = [
+                        'food_name',
+                        'quantity',
+                        'unit',
+                        'calories',
+                        'protein_g',
+                        'carbs_g',
+                        'fats_g'
+                    ];
+
+                    foreach ($requiredItemFields as $field) {
+                        if (!isset($item[$field])) {
+                            throw new \Exception("Item missing field: {$field}");
+                        }
+                    }
+                }
+            }
+        }
+    }
     private function mealTypeForIndex(int $index): string
     {
         return match ($index) {

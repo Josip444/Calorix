@@ -19,6 +19,8 @@ class MealPlan extends Model
         'fats_g_target',
         'source',
         'status',
+        'current_week_processing',
+        'progress_percentage',
     ];
 
     protected $casts = [

@@ -26,6 +26,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/meal-plans', [MealPlanController::class, 'index']);
     Route::post('/meal-plans', [MealPlanController::class, 'store']);
+    Route::post('/meal-plans/{mealPlan}/cancel', [MealPlanController::class, 'cancel']);
     Route::get('/meal-plans/{mealPlan}', [MealPlanController::class, 'show']);
     Route::get('/meal-plans/{mealPlan}/weeks/{week}', [MealPlanController::class, 'showWeek']);
     Route::get('/meal-plans/{mealPlan}/days/{day}', [MealPlanController::class, 'showDay']);

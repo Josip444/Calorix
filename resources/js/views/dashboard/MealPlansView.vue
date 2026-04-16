@@ -10,16 +10,16 @@
       <button
         type="button"
         class="inline-flex items-center justify-center px-6 py-3 rounded-full bg-slate-900 text-white text-sm font-semibold shadow-lg shadow-slate-200 hover:bg-slate-800 transition-all disabled:opacity-60"
-        :disabled="loading"
+        :disabled="loading || isGeneratingAny"
         @click="generatePlan"
       >
-        <span v-if="loading" class="mr-2">
+        <span v-if="loading || isGeneratingAny" class="mr-2">
            <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
            </svg>
         </span>
-        {{ loading ? 'Generiram tvoj plan...' : 'Generiraj novi plan' }}
+        {{ loading || isGeneratingAny ? 'Generiram tvoj plan...' : 'Generiraj novi plan' }}
       </button>
     </div>
 
@@ -38,13 +38,21 @@
             >
               <div class="flex items-center justify-between mb-1">
                 <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full"
-                      :class="plan.status === 'generated' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'">
-                  {{ plan.status === 'generated' ? 'Spreman' : 'U izradi' }}
+                      :class="{
+                        'bg-emerald-100 text-emerald-700': plan.status === 'generated',
+                        'bg-amber-100 text-amber-700': plan.status === 'generating',
+                        'bg-red-100 text-red-700': plan.status === 'failed'
+                      }">
+                  {{ getStatusLabel(plan) }}
                 </span>
                 <span class="text-[10px] text-slate-400">{{ formatDate(plan.created_at) }}</span>
               </div>
               <p class="font-semibold text-sm text-slate-900">{{ plan.start_date || 'Novi plan' }}</p>
               <p class="text-xs text-slate-500 truncate">{{ plan.daily_calories_target }} kcal dnevno</p>
+              
+              <div v-if="plan.status === 'generating'" class="mt-2 h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div class="h-full bg-slate-900 transition-all duration-500" :style="{ width: `${plan.progress_percentage}%` }"></div>
+              </div>
             </button>
             <div v-if="!plans.length" class="text-center py-8">
                <p class="text-sm text-slate-400 italic">Nemaš aktivnih planova.</p>
@@ -61,6 +69,58 @@
            </div>
            <h3 class="font-semibold text-slate-900">Odaberi plan za prikaz</h3>
            <p class="text-sm text-slate-500 mt-1">Svi tvoji detaljni jelovnici pojavit će se ovdje.</p>
+        </div>
+
+        <div v-else-if="activePlan.status === 'generating'" class="bg-white rounded-3xl shadow-sm p-12 text-center border border-slate-100">
+          <div class="max-w-md mx-auto">
+            <div class="relative w-24 h-24 mx-auto mb-6">
+              <svg class="w-full h-full transform -rotate-90">
+                <circle cx="48" cy="48" r="40" stroke="currentColor" stroke-width="8" fill="transparent" class="text-slate-100" />
+                <circle cx="48" cy="48" r="40" stroke="currentColor" stroke-width="8" fill="transparent"
+                        class="text-slate-900 transition-all duration-1000"
+                        :stroke-dasharray="251.2"
+                        :stroke-dashoffset="251.2 - (251.2 * activePlan.progress_percentage / 100)" />
+              </svg>
+              <div class="absolute inset-0 flex items-center justify-center text-lg font-bold">
+                {{ activePlan.progress_percentage }}%
+              </div>
+            </div>
+            <h3 class="font-bold text-xl text-slate-900 mb-2">Generiramo tvoj 4-tjedni plan</h3>
+            <p class="text-sm text-slate-500 mb-6">
+              Umjetna inteligencija upravo sastavlja tvoje obroke. Ovo može potrajati oko minutu.
+              <span v-if="activePlan.current_week_processing" class="block mt-2 font-semibold text-slate-900 italic animate-pulse">
+                Trenutno se generira: Tjedan {{ activePlan.current_week_processing }}/4...
+              </span>
+            </p>
+            <div class="flex flex-col items-center gap-4">
+              <div class="flex justify-center gap-1">
+                <div v-for="i in 4" :key="i" class="w-3 h-3 rounded-full"
+                     :class="i <= (activePlan.progress_percentage / 25) ? 'bg-slate-900' : 'bg-slate-100'"></div>
+              </div>
+              <button @click="cancelPlan(activePlan.id)" 
+                      class="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors py-2 px-4 border border-red-100 rounded-full hover:bg-red-50">
+                Otkaži generiranje
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div v-else-if="activePlan.status === 'cancelled'" class="bg-white rounded-3xl shadow-sm p-12 text-center border border-slate-100">
+           <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+             <svg class="w-8 h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+           </div>
+           <h3 class="font-semibold text-slate-900">Generiranje je otkazano</h3>
+           <p class="text-sm text-slate-500 mt-1">Ovaj plan prehrane nije dovršen jer ste ga otkazali.</p>
+           <button @click="generatePlan" class="mt-4 px-6 py-2 bg-slate-900 text-white rounded-full text-sm font-semibold">Generiraj novi ponovno</button>
+        </div>
+
+        <div v-else-if="activePlan.status === 'failed'" class="bg-white rounded-3xl shadow-sm p-12 text-center border border-red-100">
+           <div class="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+             <svg class="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+           </div>
+           <h3 class="font-semibold text-slate-900">Došlo je do greške</h3>
+           <p class="text-sm text-slate-500 mt-1">Nismo uspjeli generirati ovaj plan. Molimo pokušaj ponovno.</p>
+           <button @click="generatePlan" class="mt-4 px-6 py-2 bg-slate-900 text-white rounded-full text-sm font-semibold">Pokušaj ponovno</button>
         </div>
 
         <template v-else>
@@ -110,7 +170,7 @@
                    <div class="space-y-3">
                       <div v-for="item in meal.items" :key="item.id" class="flex justify-between items-center text-sm">
                          <span class="text-slate-700">{{ item.food_name }}</span>
-                         <span class="text-slate-400 text-xs">{{ item.quantity }}{{ item.unit }}</span>
+                         <span class="text-slate-400 text-xs">{{ item.quantity || item.quantity_text }}{{ item.unit }}</span>
                       </div>
                    </div>
                    <div class="mt-6 pt-4 border-t border-slate-50 flex justify-between">
@@ -130,7 +190,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch, onUnmounted } from 'vue';
 import { api } from '../../bootstrap';
 
 const plans = reactive([]);
@@ -140,23 +200,32 @@ const fullPlanData = ref(null);
 
 const selectedWeekId = ref(null);
 const selectedDayId = ref(null);
+const pollingInterval = ref(null);
 
 const activePlan = computed(() => fullPlanData.value);
 
 const activeWeek = computed(() => {
   if (!activePlan.value || !selectedWeekId.value) return null;
-  return activePlan.value.weeks.find(w => w.id === selectedWeekId.value);
+  return activePlan.value.weeks?.find(w => w.id === selectedWeekId.value);
 });
 
 const activeDay = computed(() => {
   if (!activeWeek.value || !selectedDayId.value) return null;
-  return activeWeek.value.days.find(d => d.id === selectedDayId.value);
+  return activeWeek.value.days?.find(d => d.id === selectedDayId.value);
 });
+
+const isGeneratingAny = computed(() => plans.some(p => p.status === 'generating'));
 
 async function fetchPlans() {
   try {
     const { data } = await api.get('/meal-plans');
     plans.splice(0, plans.length, ...(data.meal_plans || []));
+    
+    const generatingPlan = plans.find(p => p.status === 'generating');
+    if (generatingPlan) {
+      startPolling(generatingPlan.id);
+    }
+
     if (!selectedPlanId.value && plans.length) {
       selectPlan(plans[0].id);
     }
@@ -169,19 +238,17 @@ async function selectPlan(id) {
   selectedPlanId.value = id;
   try {
     const { data } = await api.get(`/meal-plans/${id}`);
-    // The API might not return nested data by default based on Controller logic
-    // But let's check what we get.
-    // If the controller from step 5 is used, show() loads weeks.
-    // We might need to load deeper levels or the controller handles it.
     fullPlanData.value = data.meal_plan;
+
+    if (fullPlanData.value?.status === 'generating') {
+      startPolling(id);
+    } else {
+      stopPolling();
+    }
 
     // Default to first week and its first day
     if (fullPlanData.value?.weeks?.length) {
        selectedWeekId.value = fullPlanData.value.weeks[0].id;
-
-       // Fetch full day details if needed or if already included
-       // Let's assume for now we might need to fetch the first week's days
-       await fetchWeekDetails(selectedWeekId.value);
     }
   } catch (err) {
     console.error('Failed to fetch plan details', err);
@@ -189,15 +256,15 @@ async function selectPlan(id) {
 }
 
 async function fetchWeekDetails(weekId) {
-   if (!selectedPlanId.value) return;
+   if (!selectedPlanId.value || !fullPlanData.value?.weeks) return;
    try {
      const { data } = await api.get(`/meal-plans/${selectedPlanId.value}/weeks/${weekId}`);
      const weekIdx = fullPlanData.value.weeks.findIndex(w => w.id === weekId);
-     fullPlanData.value.weeks[weekIdx] = data.week;
-
-     if (data.week.days?.length) {
-        selectedDayId.value = data.week.days[0].id;
-        await fetchDayDetails(selectedDayId.value);
+     if (weekIdx !== -1) {
+       fullPlanData.value.weeks[weekIdx] = data.week;
+       if (data.week.days?.length) {
+          selectedDayId.value = data.week.days[0].id;
+       }
      }
    } catch (err) {
      console.error('Failed to fetch week details', err);
@@ -205,10 +272,9 @@ async function fetchWeekDetails(weekId) {
 }
 
 async function fetchDayDetails(dayId) {
-   if (!selectedPlanId.value) return;
+   if (!selectedPlanId.value || !fullPlanData.value?.weeks) return;
    try {
      const { data } = await api.get(`/meal-plans/${selectedPlanId.value}/days/${dayId}`);
-     // Find the day in the nested structure and update it
      for (const week of fullPlanData.value.weeks) {
         const dayIdx = week.days?.findIndex(d => d.id === dayId);
         if (dayIdx !== undefined && dayIdx !== -1) {
@@ -219,6 +285,39 @@ async function fetchDayDetails(dayId) {
    } catch (err) {
      console.error('Failed to fetch day details', err);
    }
+}
+
+function startPolling(id) {
+  if (pollingInterval.value) return;
+  pollingInterval.value = setInterval(async () => {
+    try {
+      const { data } = await api.get(`/meal-plans/${id}`);
+      const updatedPlan = data.meal_plan;
+      
+      const idx = plans.findIndex(p => p.id === id);
+      if (idx !== -1) plans[idx] = updatedPlan;
+      
+      if (selectedPlanId.value === id) {
+        fullPlanData.value = updatedPlan;
+      }
+
+      if (updatedPlan.status !== 'generating') {
+        stopPolling();
+        if (updatedPlan.status === 'generated' && selectedPlanId.value === id) {
+          selectPlan(id);
+        }
+      }
+    } catch (err) {
+      stopPolling();
+    }
+  }, 3000);
+}
+
+function stopPolling() {
+  if (pollingInterval.value) {
+    clearInterval(pollingInterval.value);
+    pollingInterval.value = null;
+  }
 }
 
 watch(selectedWeekId, (newId) => {
@@ -234,12 +333,36 @@ async function generatePlan() {
   try {
     const { data } = await api.post('/meal-plans');
     await fetchPlans();
-    if (data.meal_plan) selectPlan(data.meal_plan.id);
+    if (data.meal_plan) {
+      selectPlan(data.meal_plan.id);
+      startPolling(data.meal_plan.id);
+    }
   } catch (err) {
     console.error('Failed to generate plan', err);
   } finally {
     loading.value = false;
   }
+}
+
+async function cancelPlan(id) {
+  if (!confirm('Jeste li sigurni da želite otkazati generiranje ovog plana?')) return;
+  try {
+    const { data } = await api.post(`/meal-plans/${id}/cancel`);
+    stopPolling();
+    // Update local plan state
+    const idx = plans.findIndex(p => p.id === id);
+    if (idx !== -1) plans[idx] = data.meal_plan;
+    if (selectedPlanId.value === id) fullPlanData.value = data.meal_plan;
+  } catch (err) {
+    console.error('Failed to cancel plan', err);
+  }
+}
+
+function getStatusLabel(plan) {
+  if (plan.status === 'generated') return 'Spreman';
+  if (plan.status === 'failed') return 'Greška';
+  if (plan.status === 'cancelled') return 'Otkazano';
+  return `U izradi (${plan.progress_percentage ?? 0}%)`;
 }
 
 function formatDate(dateStr) {
@@ -256,5 +379,6 @@ function getDayNum(dateStr) {
 }
 
 onMounted(fetchPlans);
+onUnmounted(stopPolling);
 </script>
 
