@@ -39,9 +39,10 @@
               <div class="flex items-center justify-between mb-1">
                 <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full"
                       :class="{
-                        'bg-emerald-100 text-emerald-700': plan.status === 'generated',
-                        'bg-amber-100 text-amber-700': plan.status === 'generating',
-                        'bg-red-100 text-red-700': plan.status === 'failed'
+                        'bg-emerald-100 text-emerald-700': plan.status === 'generated' && plan.progress_percentage >= 100,
+                        'bg-amber-100 text-amber-700': plan.status === 'generating' || (plan.status === 'generated' && plan.progress_percentage < 100),
+                        'bg-red-100 text-red-700': plan.status === 'failed',
+                        'bg-slate-100 text-slate-700': plan.status === 'cancelled'
                       }">
                   {{ getStatusLabel(plan) }}
                 </span>
@@ -150,9 +151,10 @@
                 <div v-if="activePlan.status === 'generating' && activePlan.current_week_processing === activeWeek.week_number">
                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900 mx-auto mb-4"></div>
                    <h3 class="font-bold text-xl text-slate-900">Generiramo tvoj plan za Tjedan {{ activeWeek.week_number }}</h3>
-                   <p class="text-sm text-slate-500 mt-2 mb-6">Umjetna inteligencija sastavlja tvoj jelovnik. Molimo pričekaj...</p>
+                   <p class="text-sm text-slate-500 mt-2 mb-8">Umjetna inteligencija sastavlja tvoj jelovnik. Molimo pričekaj...</p>
+                   
                    <button @click="cancelPlan(activePlan.id)" 
-                           class="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors py-2 px-4 border border-red-100 rounded-full hover:bg-red-50">
+                           class="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors py-2 px-6 border border-red-200 rounded-full hover:bg-red-50">
                      Zaustavi generiranje
                    </button>
                 </div>
@@ -414,9 +416,13 @@ async function deletePlan(id) {
 }
 
 function getStatusLabel(plan) {
-  if (plan.status === 'generated') return 'Spreman';
   if (plan.status === 'failed') return 'Greška';
   if (plan.status === 'cancelled') return 'Otkazano';
+  
+  if (plan.status === 'generated' && plan.progress_percentage >= 100) {
+    return 'Spremno';
+  }
+  
   return `U izradi (${plan.progress_percentage ?? 0}%)`;
 }
 
@@ -436,4 +442,3 @@ function getDayNum(dateStr) {
 onMounted(fetchPlans);
 onUnmounted(stopPolling);
 </script>
-

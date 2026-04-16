@@ -8,8 +8,8 @@ use App\Models\MealDay;
 use App\Models\MealPlan;
 use App\Models\MealWeek;
 use App\Services\MealPlanGenerator;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 

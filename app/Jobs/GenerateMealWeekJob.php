@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\MealPlan;
+use App\Models\MealWeek;
 use App\Services\MealPlanGenerator;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -64,12 +65,16 @@ class GenerateMealWeekJob implements ShouldQueue
             DB::transaction(function () use ($plan, $structure, $generator) {
                 $generator->persistWeek($plan, $this->weekNumber, $structure);
                 
-                $completedWeeks = $plan->weeks()->whereHas('days')->count();
+                // Use a fresh query for accuracy
+                $completedWeeks = MealWeek::where('meal_plan_id', $plan->id)
+                    ->whereHas('days')
+                    ->count();
+                
                 $progress = ($completedWeeks / 4) * 100;
                 
                 $plan->update([
                     'progress_percentage' => (int) $progress,
-                    'status' => 'generated', // Mark as generated so user can see it, even if partially
+                    'status' => $completedWeeks >= 4 ? 'generated' : 'generating',
                     'current_week_processing' => null
                 ]);
 
