@@ -40,7 +40,7 @@ class GenerateMealWeekJob implements ShouldQueue
 
         try {
             $user = $plan->user;
-            
+
             // For simplicity, we'll use 4 meals per day as a default or from user profile
             $mealsPerDay = $user->meals_per_day ?: 4;
 
@@ -55,7 +55,6 @@ class GenerateMealWeekJob implements ShouldQueue
                 weekNumber: $this->weekNumber
             );
 
-            // Check again after OpenAI response
             $plan->refresh();
             if ($plan->status === 'cancelled' || $plan->current_week_processing !== $this->weekNumber) {
                 Log::info("GenerateMealWeekJob exit after AI: Plan {$this->mealPlanId} was stopped for week {$this->weekNumber}.");
@@ -64,17 +63,17 @@ class GenerateMealWeekJob implements ShouldQueue
 
             DB::transaction(function () use ($plan, $structure, $generator) {
                 $generator->persistWeek($plan, $this->weekNumber, $structure);
-                
+
                 // Use a fresh query for accuracy
                 $completedWeeks = MealWeek::where('meal_plan_id', $plan->id)
                     ->whereHas('days')
                     ->count();
-                
+
                 $progress = ($completedWeeks / 4) * 100;
-                
+
                 $plan->update([
                     'progress_percentage' => (int) $progress,
-                    'status' => $completedWeeks >= 4 ? 'generated' : 'generating',
+                    'status' => 'generated',
                     'current_week_processing' => null
                 ]);
 
@@ -88,11 +87,11 @@ class GenerateMealWeekJob implements ShouldQueue
 
         } catch (\Throwable $e) {
             Log::error("Failed to generate week {$this->weekNumber} for plan {$this->mealPlanId}: " . $e->getMessage());
-            
+
             if ($this->attempts() >= $this->tries) {
                 $plan->update(['status' => 'failed']);
             }
-            
+
             throw $e;
         }
     }
