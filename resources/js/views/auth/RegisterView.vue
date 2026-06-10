@@ -267,14 +267,31 @@
               </div>
             </div>
 
-            <div>
+            <div class="space-y-6">
               <label class="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Alergije i ograničenja</label>
-              <textarea
-                v-model="form.allergies_text"
-                rows="4"
-                placeholder="npr. kikiriki, laktoza, ne volim brokulu..."
-                class="w-full rounded-2xl border-2 border-slate-100 bg-slate-50/50 px-4 py-3 text-sm font-medium focus:outline-none focus:border-slate-900 focus:bg-white transition-all resize-none"
-              ></textarea>
+              
+              <div class="space-y-6">
+                <div v-for="cat in allergyCategories" :key="cat.name" class="space-y-4">
+                  <div class="flex items-center gap-2 ml-1">
+                    <span class="text-sm">{{ cat.icon }}</span>
+                    <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">{{ cat.name }}</span>
+                  </div>
+                  <div class="flex flex-wrap gap-2">
+                    <button
+                      v-for="opt in cat.options"
+                      :key="opt"
+                      type="button"
+                      @click="toggleAllergy(opt)"
+                      class="px-5 py-2.5 rounded-full text-xs font-bold transition-all border-2"
+                      :class="selectedAllergies.includes(opt) 
+                        ? 'bg-slate-900 border-slate-900 text-white shadow-lg shadow-slate-900/20' 
+                        : 'bg-slate-100 border-slate-100 text-slate-700 hover:border-slate-200 hover:bg-white hover:text-slate-900'"
+                    >
+                      {{ opt }}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -376,6 +393,50 @@ const form = reactive({
   meals_per_day: 3,
   allergies_text: '',
 });
+
+const allergyCategories = [
+  {
+    name: 'Orašasti plodovi',
+    icon: '🥜',
+    options: ['Kikiriki', 'Lješnjak', 'Badem', 'Orah', 'Indijski orah'],
+  },
+  {
+    name: 'Mliječni proizvodi',
+    icon: '🥛',
+    options: ['Laktoza', 'Kazein (mlijeko)'],
+  },
+  {
+    name: 'Žitarice',
+    icon: '🌾',
+    options: ['Gluten (pšenica)', 'Raž', 'Ječam'],
+  },
+  {
+    name: 'Ostalo',
+    icon: '🥚',
+    options: [
+      'Jaja',
+      'Soja',
+      'Riba',
+      'Školjke',
+      'Sezam',
+      'Gorušica',
+      'Celer',
+      'Sulfiti',
+    ],
+  },
+];
+
+const selectedAllergies = ref([]);
+
+function toggleAllergy(allergy) {
+  const index = selectedAllergies.value.indexOf(allergy);
+  if (index > -1) {
+    selectedAllergies.value.splice(index, 1);
+  } else {
+    selectedAllergies.value.push(allergy);
+  }
+  form.allergies_text = selectedAllergies.value.length > 0 ? selectedAllergies.value.join(', ') : 'Nema alergija';
+}
 
 const errors = reactive({});
 const loading = ref(false);

@@ -126,13 +126,31 @@
         </div>
       </div>
 
-      <div>
+      <div class="space-y-6 pt-2">
         <label class="block text-sm font-medium mb-1">Alergije / namirnice koje ne voliš</label>
-        <textarea
-          v-model="form.allergies_text"
-          rows="3"
-          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-        ></textarea>
+        
+        <div class="space-y-6">
+          <div v-for="cat in allergyCategories" :key="cat.name" class="space-y-4">
+            <div class="flex items-center gap-2 ml-1">
+              <span class="text-sm">{{ cat.icon }}</span>
+              <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">{{ cat.name }}</span>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="opt in cat.options"
+                :key="opt"
+                type="button"
+                @click="toggleAllergy(opt)"
+                class="px-5 py-2.5 rounded-full text-xs font-bold transition-all border-2"
+                :class="selectedAllergies.includes(opt) 
+                  ? 'bg-slate-900 border-slate-900 text-white shadow-lg shadow-slate-900/20' 
+                  : 'bg-slate-100 border-slate-100 text-slate-700 hover:border-slate-200 hover:bg-white hover:text-slate-900'"
+              >
+                {{ opt }}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <p v-if="errors.message" class="text-xs text-red-600">
@@ -173,6 +191,50 @@ const form = reactive({
   allergies_text: '',
 });
 
+const allergyCategories = [
+  {
+    name: 'Orašasti plodovi',
+    icon: '🥜',
+    options: ['Kikiriki', 'Lješnjak', 'Badem', 'Orah', 'Indijski orah'],
+  },
+  {
+    name: 'Mliječni proizvodi',
+    icon: '🥛',
+    options: ['Laktoza', 'Kazein (mlijeko)'],
+  },
+  {
+    name: 'Žitarice',
+    icon: '🌾',
+    options: ['Gluten (pšenica)', 'Raž', 'Ječam'],
+  },
+  {
+    name: 'Ostalo',
+    icon: '🥚',
+    options: [
+      'Jaja',
+      'Soja',
+      'Riba',
+      'Školjke',
+      'Sezam',
+      'Gorušica',
+      'Celer',
+      'Sulfiti',
+    ],
+  },
+];
+
+const selectedAllergies = ref([]);
+
+function toggleAllergy(allergy) {
+  const index = selectedAllergies.value.indexOf(allergy);
+  if (index > -1) {
+    selectedAllergies.value.splice(index, 1);
+  } else {
+    selectedAllergies.value.push(allergy);
+  }
+  form.allergies_text = selectedAllergies.value.length > 0 ? selectedAllergies.value.join(', ') : 'Nema alergija';
+}
+
 const errors = reactive({});
 const loading = ref(false);
 
@@ -181,6 +243,13 @@ onMounted(async () => {
     const { data } = await api.get('/profile');
     Object.assign(form, data.user);
     auth.user = data.user;
+
+    if (form.allergies_text && form.allergies_text !== 'Nema alergija') {
+      selectedAllergies.value = form.allergies_text
+        .split(', ')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    }
   } catch {
     // ignore for now
   }
